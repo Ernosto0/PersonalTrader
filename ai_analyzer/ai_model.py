@@ -1,5 +1,9 @@
 import openai
 from utils.config import load_config
+from utils.logging import get_logger, log_ai_response
+
+# Get logger for this module
+logger = get_logger('ai_analyzer')
 
 def analyze_price_data(ticker, stock_data):
     """
@@ -13,15 +17,10 @@ def analyze_price_data(ticker, stock_data):
         dict: Dictionary containing price analysis results
     """
     try:
+        logger.info(f"Starting price analysis for {ticker}")
+        
         # Load OpenAI API key from config
-        config = load_config()
-        api_key = config.get('OPENAI_API_KEY')
-        
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in configuration")
-        
-        # Set OpenAI API key
-        openai.api_key = api_key
+        openai.api_key = GetOpenaikey()
         
         # Prepare data for analysis
         latest_price = stock_data['close'].iloc[-1]
@@ -30,12 +29,16 @@ def analyze_price_data(ticker, stock_data):
         avg_price = stock_data['close'].mean()
         price_volatility = stock_data['close'].std()
         
+        logger.debug(f"Price data prepared: latest=${latest_price:.2f}, high=${highest_price:.2f}, low=${lowest_price:.2f}")
+        
         # Calculate price change percentages
         price_change_1m = ((stock_data['close'].iloc[-1] / stock_data['close'].iloc[-22]) - 1) * 100 if len(stock_data) >= 22 else 0
         price_change_3m = ((stock_data['close'].iloc[-1] / stock_data['close'].iloc[-66]) - 1) * 100 if len(stock_data) >= 66 else 0
         price_change_6m = ((stock_data['close'].iloc[-1] / stock_data['close'].iloc[-132]) - 1) * 100 if len(stock_data) >= 132 else 0
         price_change_1y = ((stock_data['close'].iloc[-1] / stock_data['close'].iloc[-252]) - 1) * 100 if len(stock_data) >= 252 else 0
         price_change_2y = ((stock_data['close'].iloc[-1] / stock_data['close'].iloc[0]) - 1) * 100
+        
+        logger.debug(f"Price changes calculated: 1m={price_change_1m:.2f}%, 3m={price_change_3m:.2f}%, 6m={price_change_6m:.2f}%, 1y={price_change_1y:.2f}%, 2y={price_change_2y:.2f}%")
         
         # Create prompt for OpenAI
         prompt = f"""
@@ -58,6 +61,9 @@ def analyze_price_data(ticker, stock_data):
         Focus on identifying key price levels, trend direction, and any notable patterns in the price history.
         """
         
+        logger.debug("Sending price analysis request to OpenAI")
+        logger.debug(f"Price analysis prompt:\n{prompt}")
+        
         # Call OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -71,6 +77,12 @@ def analyze_price_data(ticker, stock_data):
         
         # Extract analysis from response
         price_analysis = response.choices[0].message.content
+        logger.debug("Received price analysis from OpenAI")
+        
+        # Log AI response in a formatted way
+        log_ai_response(logger, ticker, "price", price_analysis)
+        
+        logger.info(f"Completed price analysis for {ticker}")
         
         return {
             'analysis': price_analysis,
@@ -89,6 +101,7 @@ def analyze_price_data(ticker, stock_data):
         }
     
     except Exception as e:
+        logger.error(f"Error analyzing price data for {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error analyzing price data for {ticker}: {str(e)}")
 
 def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
@@ -105,15 +118,10 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         dict: Dictionary containing technical analysis results
     """
     try:
-        # Load OpenAI API key from config
-        config = load_config()
-        api_key = config.get('OPENAI_API_KEY')
-        
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in configuration")
+        logger.info(f"Starting technical indicator analysis for {ticker}")
         
         # Set OpenAI API key
-        openai.api_key = api_key
+        openai.api_key = GetOpenaikey()
         
         # Prepare data for analysis
         latest_price = sma_data['close'].iloc[-1]
@@ -126,6 +134,8 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         sma_50_trend = (latest_sma_50 / sma_data['sma_50'].iloc[-5] - 1) * 100 if len(sma_data) >= 5 else 0
         sma_200_trend = (latest_sma_200 / sma_data['sma_200'].iloc[-5] - 1) * 100 if len(sma_data) >= 5 else 0
         
+        logger.debug(f"SMA data prepared: SMA20=${latest_sma_20:.2f}, SMA50=${latest_sma_50:.2f}, SMA200=${latest_sma_200:.2f}")
+        
         # MACD data
         latest_macd = macd_data['macd_line'].iloc[-1]
         latest_signal = macd_data['signal_line'].iloc[-1]
@@ -134,9 +144,13 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         # MACD trend
         macd_trend = (latest_macd / macd_data['macd_line'].iloc[-5] - 1) * 100 if len(macd_data) >= 5 else 0
         
+        logger.debug(f"MACD data prepared: MACD={latest_macd:.2f}, Signal={latest_signal:.2f}, Histogram={latest_histogram:.2f}")
+        
         # RSI data
         latest_rsi = rsi_data['rsi'].iloc[-1]
         rsi_trend = (latest_rsi / rsi_data['rsi'].iloc[-5] - 1) * 100 if len(rsi_data) >= 5 else 0
+        
+        logger.debug(f"RSI data prepared: RSI={latest_rsi:.2f}, Trend={rsi_trend:.2f}%")
         
         # Create prompt for OpenAI
         prompt = f"""
@@ -165,6 +179,9 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         5. What are the key support and resistance levels based on these indicators?
         """
         
+        logger.debug("Sending technical analysis request to OpenAI")
+        logger.debug(f"Technical analysis prompt:\n{prompt}")
+        
         # Call OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -178,6 +195,12 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         
         # Extract analysis from response
         technical_analysis = response.choices[0].message.content
+        logger.debug("Received technical analysis from OpenAI")
+        
+        # Log AI response in a formatted way
+        log_ai_response(logger, ticker, "technical", technical_analysis)
+        
+        logger.info(f"Completed technical indicator analysis for {ticker}")
         
         return {
             'analysis': technical_analysis,
@@ -202,6 +225,7 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         }
     
     except Exception as e:
+        logger.error(f"Error analyzing technical indicators for {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error analyzing technical indicators for {ticker}: {str(e)}")
 
 def analyze_news_sentiment(ticker, news_data):
@@ -216,18 +240,14 @@ def analyze_news_sentiment(ticker, news_data):
         dict: Dictionary containing news sentiment analysis results
     """
     try:
-        # Load OpenAI API key from config
-        config = load_config()
-        api_key = config.get('OPENAI_API_KEY')
+        logger.info(f"Starting news sentiment analysis for {ticker}")
         
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in configuration")
-        
-        # Set OpenAI API key
-        openai.api_key = api_key
+        openai.api_key = GetOpenaikey()
         
         # Format news headlines
         news_headlines = "\n".join([f"- {article['title']}" for article in news_data[:10]])
+        
+        logger.debug(f"News data prepared: {len(news_data)} articles, using top 10 for analysis")
         
         # Create prompt for OpenAI
         prompt = f"""
@@ -243,6 +263,9 @@ def analyze_news_sentiment(ticker, news_data):
         4. Are there any emerging trends or themes in the news coverage?
         """
         
+        logger.debug("Sending news sentiment analysis request to OpenAI")
+        logger.debug(f"News sentiment analysis prompt:\n{prompt}")
+        
         # Call OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -256,6 +279,12 @@ def analyze_news_sentiment(ticker, news_data):
         
         # Extract analysis from response
         news_analysis = response.choices[0].message.content
+        logger.debug("Received news sentiment analysis from OpenAI")
+        
+        # Log AI response in a formatted way
+        log_ai_response(logger, ticker, "news", news_analysis)
+        
+        logger.info(f"Completed news sentiment analysis for {ticker}")
         
         return {
             'analysis': news_analysis,
@@ -263,9 +292,10 @@ def analyze_news_sentiment(ticker, news_data):
         }
     
     except Exception as e:
+        logger.error(f"Error analyzing news sentiment for {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error analyzing news sentiment for {ticker}: {str(e)}")
 
-def generate_final_recommendation(ticker, price_analysis, technical_analysis, news_analysis):
+def generate_final_recommendation(ticker, price_analysis, technical_analysis, news_analysis, current_price=None):
     """
     Generate a final trading recommendation based on all analyses.
     
@@ -274,28 +304,31 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         price_analysis (dict): Dictionary containing price analysis results
         technical_analysis (dict): Dictionary containing technical analysis results
         news_analysis (dict): Dictionary containing news sentiment analysis results
+        current_price (float, optional): Current price of the stock. If None, will use price from price_analysis.
         
     Returns:
         dict: Dictionary containing final analysis results
     """
     try:
-        # Load OpenAI API key from config
-        config = load_config()
-        api_key = config.get('OPENAI_API_KEY')
-        
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in configuration")
-        
-        # Set OpenAI API key
-        openai.api_key = api_key
+        logger.info(f"Generating final trading recommendation for {ticker}")
+
+        openai.api_key = GetOpenaikey()
         
         # Extract RSI data
         rsi_value = technical_analysis['rsi_data']['rsi']
         rsi_trend = technical_analysis['rsi_data']['rsi_trend']
         
+        # Get current price (use parameter if provided, otherwise from price_analysis)
+        if current_price is None:
+            current_price = price_analysis['current_price']
+            
+        logger.debug(f"Using current price for recommendation: ${current_price}")
+        
         # Create prompt for OpenAI
         prompt = f"""
         Based on the following analyses for {ticker}, provide a comprehensive trading recommendation:
+
+        CURRENT PRICE: ${current_price:.2f}
         
         PRICE ANALYSIS:
         {price_analysis['analysis']}
@@ -309,19 +342,23 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         RSI VALUE: {rsi_value:.2f} (Trend: {rsi_trend:.2f}%)
         
         Please provide a concise final analysis with the following format:
-        1. A short summary of the stock's condition
-        2. A clear Buy/Sell/Hold decision
-        3. Suggested Buy and Sell price ranges
-        4. Risk level (Low/Medium/High)
-        5. A short reason for the recommendation
-        6. Confidence score (%)
+        1. Summary: A short summary of the stock's condition
+        2. Decision: A clear Buy/Sell/Hold decision
+        3. Buy Range: $X - $Y (specify a clear price range with numbers only)
+        4. Sell Range: $X - $Y (specify a clear price range with numbers only)
+        5. Risk Level: Low/Medium/High
+        6. Reason: A short reason for the recommendation
+        7. Confidence: X% (provide a percentage)
         """
+        
+        logger.debug("Sending final recommendation request to OpenAI")
+        logger.debug(f"Final recommendation prompt summary for {ticker} (prompt too long to log in full)")
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a professional stock analyst providing clear, direct trading recommendations."},
+                {"role": "system", "content": "You are a professional stock analyst providing clear, direct trading recommendations. ALWAYS format price ranges using simple dollar amounts like: $100 - $120. Always include specific numeric price ranges."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
@@ -330,6 +367,10 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         
         # Extract analysis from response
         analysis_text = response.choices[0].message.content
+        logger.debug("Received final recommendation from OpenAI")
+        
+        # Log AI response in a formatted way
+        log_ai_response(logger, ticker, "final", analysis_text)
         
         # Parse the analysis text to extract structured data
         lines = analysis_text.split('\n')
@@ -345,37 +386,155 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
             'confidence': 0
         }
         
-        # Parse the analysis text (simplified)
+        # Parse the analysis text line by line
         for line in lines:
-            if 'summary' in line.lower():
+            if 'summary' in line.lower() and ':' in line:
                 analysis['summary'] = line.split(':', 1)[1].strip()
-            elif 'decision' in line.lower():
+            elif 'decision' in line.lower() and ':' in line:
                 analysis['decision'] = line.split(':', 1)[1].strip()
-            elif 'buy range' in line.lower():
-                range_str = line.split(':', 1)[1].strip()
-                analysis['buy_range'] = [float(x.strip('$').strip()) for x in range_str.split('-')]
-            elif 'sell range' in line.lower():
-                range_str = line.split(':', 1)[1].strip()
-                analysis['sell_range'] = [float(x.strip('$').strip()) for x in range_str.split('-')]
-            elif 'risk level' in line.lower():
+            elif 'buy range' in line.lower() and ':' in line:
+                try:
+                    range_str = line.split(':', 1)[1].strip()
+                    logger.debug(f"Parsing buy range: {range_str}")
+                    
+                    # Extract numbers using more robust approach
+                    import re
+                    numbers = re.findall(r'\$?\s*(\d+(?:\.\d+)?)', range_str)
+                    logger.debug(f"Extracted numbers from buy range: {numbers}")
+                    
+                    if len(numbers) >= 2:
+                        analysis['buy_range'] = [float(numbers[0]), float(numbers[1])]
+                    elif len(numbers) == 1:
+                        # If only one number is found, create a range around it
+                        value = float(numbers[0])
+                        lower = value * 0.95  # 5% below
+                        upper = value * 1.05  # 5% above
+                        analysis['buy_range'] = [round(lower, 2), round(upper, 2)]
+                    else:
+                        logger.warning(f"Could not parse buy range properly: {range_str}")
+                except Exception as e:
+                    logger.warning(f"Error parsing buy range: {str(e)}")
+            
+            elif 'sell range' in line.lower() and ':' in line:
+                try:
+                    range_str = line.split(':', 1)[1].strip()
+                    logger.debug(f"Parsing sell range: {range_str}")
+                    
+                    # Extract numbers using more robust approach
+                    import re
+                    numbers = re.findall(r'\$?\s*(\d+(?:\.\d+)?)', range_str)
+                    logger.debug(f"Extracted numbers from sell range: {numbers}")
+                    
+                    if len(numbers) >= 2:
+                        analysis['sell_range'] = [float(numbers[0]), float(numbers[1])]
+                    elif len(numbers) == 1:
+                        # If only one number is found, create a range around it
+                        value = float(numbers[0])
+                        lower = value * 0.95  # 5% below
+                        upper = value * 1.05  # 5% above
+                        analysis['sell_range'] = [round(lower, 2), round(upper, 2)]
+                    else:
+                        logger.warning(f"Could not parse sell range properly: {range_str}")
+                except Exception as e:
+                    logger.warning(f"Error parsing sell range: {str(e)}")
+            
+            elif 'risk level' in line.lower() and ':' in line:
                 analysis['risk_level'] = line.split(':', 1)[1].strip()
-            elif 'reason' in line.lower():
+            elif 'reason' in line.lower() and ':' in line:
                 analysis['reason'] = line.split(':', 1)[1].strip()
-            elif 'confidence' in line.lower():
-                confidence_str = line.split(':', 1)[1].strip()
-                analysis['confidence'] = int(confidence_str.strip('%'))
+            elif 'confidence' in line.lower() and ':' in line:
+                try:
+                    confidence_str = line.split(':', 1)[1].strip()
+                    # Extract number from confidence (handle cases like "90%" or "90 percent")
+                    import re
+                    confidence_match = re.search(r'(\d+)', confidence_str)
+                    if confidence_match:
+                        analysis['confidence'] = int(confidence_match.group(1))
+                    else:
+                        logger.warning(f"Could not parse confidence properly: {confidence_str}")
+                except Exception as e:
+                    logger.warning(f"Error parsing confidence: {str(e)}")
+        
+        # If we couldn't find price ranges in the specific lines, try to extract them from the entire text
+        if analysis['buy_range'] == [0, 0] or analysis['sell_range'] == [0, 0]:
+            logger.debug("Attempting to extract price ranges from full text")
+            import re
+            
+            # Look for buy/sell patterns in the entire text
+            if analysis['buy_range'] == [0, 0]:
+                buy_patterns = [
+                    r'buy.*?(?:between|range|at|around|near).*?\$\s*(\d+(?:\.\d+)?)\s*(?:to|-|and)\s*\$\s*(\d+(?:\.\d+)?)',
+                    r'buy.*?(?:below|under|around|at).*?\$\s*(\d+(?:\.\d+)?)',
+                    r'accumulate.*?(?:between|range|at|around|near).*?\$\s*(\d+(?:\.\d+)?)\s*(?:to|-|and)\s*\$\s*(\d+(?:\.\d+)?)',
+                    r'entry.*?(?:between|range|at|around|near).*?\$\s*(\d+(?:\.\d+)?)\s*(?:to|-|and)\s*\$\s*(\d+(?:\.\d+)?)'
+                ]
+                
+                for pattern in buy_patterns:
+                    matches = re.search(pattern, analysis_text.lower())
+                    if matches:
+                        group_count = len(matches.groups())
+                        if group_count >= 2:
+                            analysis['buy_range'] = [float(matches.group(1)), float(matches.group(2))]
+                            logger.debug(f"Extracted buy range from full text: {analysis['buy_range']}")
+                            break
+                        elif group_count == 1:
+                            value = float(matches.group(1))
+                            analysis['buy_range'] = [round(value * 0.95, 2), round(value * 1.05, 2)]
+                            logger.debug(f"Extracted single buy price from full text and created range: {analysis['buy_range']}")
+                            break
+            
+            if analysis['sell_range'] == [0, 0]:
+                sell_patterns = [
+                    r'sell.*?(?:between|range|at|around|near).*?\$\s*(\d+(?:\.\d+)?)\s*(?:to|-|and)\s*\$\s*(\d+(?:\.\d+)?)',
+                    r'sell.*?(?:above|over|around|at).*?\$\s*(\d+(?:\.\d+)?)',
+                    r'exit.*?(?:between|range|at|around|near).*?\$\s*(\d+(?:\.\d+)?)\s*(?:to|-|and)\s*\$\s*(\d+(?:\.\d+)?)',
+                    r'target.*?(?:between|range|at|around|near).*?\$\s*(\d+(?:\.\d+)?)\s*(?:to|-|and)\s*\$\s*(\d+(?:\.\d+)?)'
+                ]
+                
+                for pattern in sell_patterns:
+                    matches = re.search(pattern, analysis_text.lower())
+                    if matches:
+                        group_count = len(matches.groups())
+                        if group_count >= 2:
+                            analysis['sell_range'] = [float(matches.group(1)), float(matches.group(2))]
+                            logger.debug(f"Extracted sell range from full text: {analysis['sell_range']}")
+                            break
+                        elif group_count == 1:
+                            value = float(matches.group(1))
+                            analysis['sell_range'] = [round(value * 0.95, 2), round(value * 1.05, 2)]
+                            logger.debug(f"Extracted single sell price from full text and created range: {analysis['sell_range']}")
+                            break
+        
+        # If we still don't have price ranges, use current price as base for estimating ranges
+        if analysis['buy_range'] == [0, 0] and analysis['decision'].lower() in ['buy', 'accumulate', 'strong buy']:
+            lower = current_price * 0.90  # 10% below current price
+            upper = current_price * 0.98  # 2% below current price
+            analysis['buy_range'] = [round(lower, 2), round(upper, 2)]
+            logger.debug(f"Using estimated buy range based on current price: {analysis['buy_range']}")
+        
+        if analysis['sell_range'] == [0, 0] and analysis['decision'].lower() in ['sell', 'reduce', 'strong sell']:
+            lower = current_price * 1.02  # 2% above current price
+            upper = current_price * 1.10  # 10% above current price
+            analysis['sell_range'] = [round(lower, 2), round(upper, 2)]
+            logger.debug(f"Using estimated sell range based on current price: {analysis['sell_range']}")
+        
+        logger.debug(f"Parsed recommendation data: Decision={analysis['decision']}, Risk={analysis['risk_level']}, Confidence={analysis['confidence']}%")
+        logger.debug(f"Buy Range: {analysis['buy_range']}, Sell Range: {analysis['sell_range']}")
         
         # Add detailed analyses to the result
         analysis['price_analysis'] = price_analysis
         analysis['technical_analysis'] = technical_analysis
         analysis['news_analysis'] = news_analysis
         
+        logger.info(f"Completed final trading recommendation for {ticker}")
+        
         return analysis
     
     except Exception as e:
+        logger.error(f"Error generating final recommendation for {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error generating final recommendation for {ticker}: {str(e)}")
 
-def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data):
+def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, current_price=None):
     """
     Analyze stock data using OpenAI to generate trading recommendations.
     This function orchestrates the multi-step analysis process.
@@ -387,24 +546,52 @@ def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data):
         macd_data (pandas.DataFrame): DataFrame containing MACD indicators
         rsi_data (pandas.DataFrame): DataFrame containing RSI indicators
         news_data (list): List of dictionaries containing news articles
+        current_price (float, optional): Current price of the stock. If None, will use price from historical data.
         
     Returns:
         dict: Dictionary containing analysis results
     """
     try:
+        logger.info(f"Starting full stock analysis for {ticker}")
+        
         # Step 1: Analyze price data
+        logger.info(f"Step 1/4: Analyzing price data for {ticker}")
         price_analysis = analyze_price_data(ticker, stock_data)
         
+        # Use provided current price if available, otherwise use the one from price_analysis
+        if current_price is None:
+            current_price = price_analysis['current_price']
+        else:
+            # Update price_analysis with the current price
+            price_analysis['current_price'] = current_price
+            
+        logger.debug(f"Using current price for analysis: ${current_price}")
+        
         # Step 2: Analyze technical indicators
+        logger.info(f"Step 2/4: Analyzing technical indicators for {ticker}")
         technical_analysis = analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data)
         
         # Step 3: Analyze news sentiment
+        logger.info(f"Step 3/4: Analyzing news sentiment for {ticker}")
         news_analysis = analyze_news_sentiment(ticker, news_data)
         
         # Step 4: Generate final recommendation
-        final_analysis = generate_final_recommendation(ticker, price_analysis, technical_analysis, news_analysis)
+        logger.info(f"Step 4/4: Generating final recommendation for {ticker}")
+        final_analysis = generate_final_recommendation(ticker, price_analysis, technical_analysis, news_analysis, current_price)
+        
+        logger.info(f"Completed full stock analysis for {ticker}")
+        logger.info(f"Final decision for {ticker}: {final_analysis['decision']} (Confidence: {final_analysis['confidence']}%)")
         
         return final_analysis
     
     except Exception as e:
-        raise Exception(f"Error analyzing stock {ticker}: {str(e)}") 
+        logger.error(f"Error analyzing stock {ticker}: {str(e)}", exc_info=True)
+        raise Exception(f"Error analyzing stock {ticker}: {str(e)}")
+
+def GetOpenaikey():
+    config = load_config()
+    api_key = config.get('OPENAI_API_KEY')
+    
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in configuration")
+    return api_key

@@ -1,5 +1,9 @@
 import pandas as pd
 import numpy as np
+from utils.logging import get_logger
+
+# Get logger for this module
+logger = get_logger('indicators')
 
 def calculate_rsi(data, period=14):
     """
@@ -13,6 +17,8 @@ def calculate_rsi(data, period=14):
         pandas.DataFrame: DataFrame with original data and RSI column
     """
     try:
+        logger.debug(f"Calculating RSI with period={period}")
+        
         # Make a copy of the data to avoid modifying the original
         df = data.copy()
         
@@ -36,7 +42,12 @@ def calculate_rsi(data, period=14):
         # Drop intermediate columns
         df = df.drop(['price_change', 'gain', 'loss', 'avg_gain', 'avg_loss', 'rs'], axis=1)
         
+        # Log the latest RSI value
+        latest_rsi = df['rsi'].iloc[-1]
+        logger.debug(f"RSI calculation completed. Latest RSI: {latest_rsi:.2f}")
+        
         return df
     
     except Exception as e:
+        logger.error(f"Error calculating RSI: {str(e)}", exc_info=True)
         raise Exception(f"Error calculating RSI: {str(e)}")
