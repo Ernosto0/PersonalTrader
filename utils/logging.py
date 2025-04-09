@@ -77,6 +77,32 @@ def setup_logger(name='stock_assistant', log_level=logging.INFO):
             )
             ai_handler.setFormatter(ai_formatter)
             logger.addHandler(ai_handler)
+            
+            # Special handler for final analysis results
+            final_analysis_log_file = logs_dir / 'final_analysis.log'
+            final_analysis_handler = RotatingFileHandler(
+                final_analysis_log_file,
+                maxBytes=10*1024*1024,  # 10MB
+                backupCount=10
+            )
+            final_analysis_handler.setLevel(logging.INFO)
+            
+            # Create a filter that only accepts final analysis logs
+            class FinalAnalysisFilter(logging.Filter):
+                def filter(self, record):
+                    return hasattr(record, 'final_analysis') and record.final_analysis is True
+            
+            # Custom formatter for final analysis
+            final_analysis_formatter = logging.Formatter(
+                '\n%(asctime)s - TICKER: %(ticker)s\n'
+                '==============================================\n'
+                '%(message)s\n'
+                '==============================================\n',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+            final_analysis_handler.setFormatter(final_analysis_formatter)
+            final_analysis_handler.addFilter(FinalAnalysisFilter())
+            logger.addHandler(final_analysis_handler)
         
         # Log startup message
         logger.info(f"Logger '{name}' initialized at {datetime.datetime.now()}")
@@ -120,4 +146,35 @@ def log_ai_response(logger, ticker, analysis_type, response):
     separator = "=" * len(header)
     
     message = f"{separator}\n{header}\n{separator}\n\n{response}"
-    logger.info(message) 
+    logger.info(message)
+
+def log_final_analysis(logger, ticker, analysis):
+    """
+    Log final analysis results in a dedicated log file.
+    
+    Args:
+        logger (logging.Logger): Logger instance (should be 'ai_analyzer' logger)
+        ticker (str): Stock ticker symbol
+        analysis (dict): Analysis results dictionary
+    """
+    message = f"""TICKER: {ticker}
+TIMESTAMP: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+CURRENT PRICE: ${analysis['price_analysis']['current_price']:.2f}
+
+SUMMARY: {analysis['summary']}
+DECISION: {analysis['decision']}
+BUY RANGE: ${analysis['buy_range'][0]} - ${analysis['buy_range'][1]}
+SELL RANGE: ${analysis['sell_range'][0]} - ${analysis['sell_range'][1]}
+RISK LEVEL: {analysis['risk_level']}
+REASON: {analysis['reason']}
+CONFIDENCE: {analysis['confidence']}%
+"""
+    
+    # Create custom record attributes for the filter
+    extra = {
+        'final_analysis': True,
+        'ticker': ticker
+    }
+    
+    # Log with extra parameters
+    logger.info(message, extra=extra) 

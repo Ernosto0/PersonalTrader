@@ -1,6 +1,6 @@
 import openai
 from utils.config import load_config
-from utils.logging import get_logger, log_ai_response
+from utils.logging import get_logger, log_ai_response, log_final_analysis
 
 # Get logger for this module
 logger = get_logger('ai_analyzer')
@@ -358,7 +358,7 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a professional stock analyst providing clear, direct trading recommendations. ALWAYS format price ranges using simple dollar amounts like: $100 - $120. Always include specific numeric price ranges."},
+                {"role": "system", "content": "You are a professional stock analyst providing clear, direct trading recommendations, confident. ALWAYS format price ranges using simple dollar amounts like: $100 - $120. Always include specific numeric price ranges."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
@@ -578,6 +578,9 @@ def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, 
         # Step 4: Generate final recommendation
         logger.info(f"Step 4/4: Generating final recommendation for {ticker}")
         final_analysis = generate_final_recommendation(ticker, price_analysis, technical_analysis, news_analysis, current_price)
+        
+        # Log final analysis to the dedicated log file
+        log_final_analysis(logger, ticker, final_analysis)
         
         logger.info(f"Completed full stock analysis for {ticker}")
         logger.info(f"Final decision for {ticker}: {final_analysis['decision']} (Confidence: {final_analysis['confidence']}%)")
