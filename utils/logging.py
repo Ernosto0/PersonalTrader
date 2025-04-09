@@ -161,7 +161,7 @@ def log_final_analysis(logger, ticker, analysis):
 TIMESTAMP: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 CURRENT PRICE: ${analysis['price_analysis']['current_price']:.2f}
 
-SUMMARY: {analysis['summary']}
+STRATEGY: {analysis['strategy']}
 DECISION: {analysis['decision']}
 BUY RANGE: ${analysis['buy_range'][0]} - ${analysis['buy_range'][1]}
 SELL RANGE: ${analysis['sell_range'][0]} - ${analysis['sell_range'][1]}

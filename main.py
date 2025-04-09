@@ -75,7 +75,7 @@ def main():
         print(f"52 Week Range: ${stock_data['low'].min():.2f} - ${stock_data['high'].max():.2f}")
         print(f"Volume: {current_data['volume']:,}")
         print("")
-        print(f"Summary: {analysis['summary']}")
+        print(f"Strategy: {analysis['strategy']}")
         print(f"Decision: {analysis['decision']}")
         
         # Check if buy range is valid

@@ -342,7 +342,7 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         RSI VALUE: {rsi_value:.2f} (Trend: {rsi_trend:.2f}%)
         
         Please provide a concise final analysis with the following format:
-        1. Summary: A short summary of the stock's condition
+        1. Give a short strategy for ticker
         2. Decision: A clear Buy/Sell/Hold decision
         3. Buy Range: $X - $Y (specify a clear price range with numbers only)
         4. Sell Range: $X - $Y (specify a clear price range with numbers only)
@@ -377,7 +377,7 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         
         # Initialize analysis dictionary
         analysis = {
-            'summary': '',
+            'strategy': '',
             'decision': '',
             'buy_range': [0, 0],
             'sell_range': [0, 0],
@@ -388,8 +388,8 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         
         # Parse the analysis text line by line
         for line in lines:
-            if 'summary' in line.lower() and ':' in line:
-                analysis['summary'] = line.split(':', 1)[1].strip()
+            if 'strategy' in line.lower() and ':' in line:
+                analysis['strategy'] = line.split(':', 1)[1].strip()
             elif 'decision' in line.lower() and ':' in line:
                 analysis['decision'] = line.split(':', 1)[1].strip()
             elif 'buy range' in line.lower() and ':' in line:
@@ -454,6 +454,47 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
                         logger.warning(f"Could not parse confidence properly: {confidence_str}")
                 except Exception as e:
                     logger.warning(f"Error parsing confidence: {str(e)}")
+        
+        # Additional parsing for missing fields
+        # If strategy is missing, use the first paragraph or line that doesn't match any other category
+        if not analysis['strategy']:
+            logger.debug("Strategy field missing, attempting to extract from text")
+            for line in lines:
+                if (line and ':' not in line and 
+                    'decision' not in line.lower() and 
+                    'buy range' not in line.lower() and 
+                    'sell range' not in line.lower() and
+                    'risk level' not in line.lower() and
+                    'reason' not in line.lower() and
+                    'confidence' not in line.lower()):
+                    analysis['strategy'] = line.strip()
+                    logger.debug(f"Extracted strategy from text: {analysis['strategy']}")
+                    break
+            
+            # If still empty, use the first line or decision as fallback
+            if not analysis['strategy'] and lines:
+                analysis['strategy'] = lines[0].strip() if ':' not in lines[0] else analysis['decision']
+                logger.debug(f"Using fallback strategy: {analysis['strategy']}")
+        
+        # If reason is missing, look for it in the text or use part of the decision as fallback
+        if not analysis['reason']:
+            logger.debug("Reason field missing, attempting to extract from text")
+            # First try to find a line that looks like a reason
+            for line in lines:
+                if (line and 'because' in line.lower() or 'due to' in line.lower() or 
+                    'based on' in line.lower() or 'given' in line.lower()):
+                    analysis['reason'] = line.strip()
+                    logger.debug(f"Extracted reason from text: {analysis['reason']}")
+                    break
+            
+            # If still empty, use decision as fallback, if decision is long enough
+            if not analysis['reason'] and len(analysis['decision']) > 20:  # A reasonable length for a decision that contains reasoning
+                analysis['reason'] = analysis['decision']
+                logger.debug(f"Using decision as reason: {analysis['reason']}")
+            # Or use strategy as fallback
+            elif not analysis['reason'] and analysis['strategy']:
+                analysis['reason'] = analysis['strategy']
+                logger.debug(f"Using strategy as reason: {analysis['reason']}")
         
         # If we couldn't find price ranges in the specific lines, try to extract them from the entire text
         if analysis['buy_range'] == [0, 0] or analysis['sell_range'] == [0, 0]:
