@@ -1,6 +1,10 @@
 import openai
 from utils.config import load_config
 from utils.logging import get_logger, log_ai_response, log_final_analysis
+from ai_analyzer.track_token_usage import track_token_usage, get_token_usage, reset_token_usage
+
+MODAL = "gpt-4o-mini"
+
 
 # Get logger for this module
 logger = get_logger('ai_analyzer')
@@ -29,6 +33,22 @@ def analyze_price_data(ticker, stock_data):
         avg_price = stock_data['close'].mean()
         price_volatility = stock_data['close'].std()
         
+        # Add volume analysis
+        if 'volume' in stock_data.columns:
+            avg_volume = stock_data['volume'].mean()
+            latest_volume = stock_data['volume'].iloc[-1]
+            volume_change = ((latest_volume / stock_data['volume'].iloc[-5:].mean()) - 1) * 100 if len(stock_data) >= 5 else 0
+            volume_trend = "Increasing" if volume_change > 10 else "Decreasing" if volume_change < -10 else "Stable"
+            
+            logger.debug(f"Volume data prepared: latest={latest_volume:.0f}, avg={avg_volume:.0f}, change={volume_change:.2f}%")
+        else:
+            avg_volume = 0
+            latest_volume = 0
+            volume_change = 0
+            volume_trend = "Unknown"
+            
+            logger.debug("Volume data not available in dataset")
+        
         logger.debug(f"Price data prepared: latest=${latest_price:.2f}, high=${highest_price:.2f}, low=${lowest_price:.2f}")
         
         # Calculate price change percentages
@@ -50,6 +70,12 @@ def analyze_price_data(ticker, stock_data):
         Average Price (2 years): ${avg_price:.2f}
         Price Volatility: ${price_volatility:.2f}
         
+        Volume Information:
+        - Latest Volume: {latest_volume:,.0f} shares
+        - Average Volume: {avg_volume:,.0f} shares
+        - Volume Change (vs 5-day avg): {volume_change:.2f}%
+        - Volume Trend: {volume_trend}
+        
         Price Changes:
         - 1 Month: {price_change_1m:.2f}%
         - 3 Months: {price_change_3m:.2f}%
@@ -58,7 +84,7 @@ def analyze_price_data(ticker, stock_data):
         - 2 Years: {price_change_2y:.2f}%
         
         Please provide a detailed analysis of the price trends, patterns, and potential price levels for support and resistance.
-        Focus on identifying key price levels, trend direction, and any notable patterns in the price history.
+        Focus on identifying key price levels, trend direction, any notable patterns in the price history, and how volume trends may confirm or contradict price movements.
         """
         
         logger.debug("Sending price analysis request to OpenAI")
@@ -66,7 +92,7 @@ def analyze_price_data(ticker, stock_data):
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=MODAL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in technical price analysis."},
                 {"role": "user", "content": prompt}
@@ -74,6 +100,9 @@ def analyze_price_data(ticker, stock_data):
             temperature=0.7,
             max_tokens=500
         )
+        
+        # Track token usage
+        track_token_usage(response)
         
         # Extract analysis from response
         price_analysis = response.choices[0].message.content
@@ -91,6 +120,12 @@ def analyze_price_data(ticker, stock_data):
             'lowest_price': lowest_price,
             'avg_price': avg_price,
             'price_volatility': price_volatility,
+            'volume_data': {
+                'latest_volume': latest_volume,
+                'avg_volume': avg_volume,
+                'volume_change': volume_change,
+                'volume_trend': volume_trend
+            },
             'price_changes': {
                 '1m': price_change_1m,
                 '3m': price_change_3m,
@@ -171,12 +206,23 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         Relative Strength Index (RSI):
         - RSI: {latest_rsi:.2f} (Trend: {rsi_trend:.2f}%)
         
+        Key Price-to-SMA Relationships:
+        - Price to SMA(20) Ratio: {(latest_price/latest_sma_20):.2f}
+        - Price to SMA(50) Ratio: {(latest_price/latest_sma_50):.2f}
+        - Price to SMA(200) Ratio: {(latest_price/latest_sma_200):.2f}
+        
+        SMA Relationships:
+        - SMA(20) to SMA(50) Ratio: {(latest_sma_20/latest_sma_50):.2f}
+        - SMA(50) to SMA(200) Ratio: {(latest_sma_50/latest_sma_200):.2f}
+        
         Please provide a detailed analysis of the technical indicators, including:
         1. What do the SMA crossovers indicate?
         2. What does the MACD signal suggest?
         3. What does the RSI value indicate about overbought/oversold conditions?
         4. Are there any bullish or bearish signals from these indicators?
         5. What are the key support and resistance levels based on these indicators?
+        6. Is there a golden cross or death cross formation?
+        7. How do the price-to-SMA relationships inform your analysis?
         """
         
         logger.debug("Sending technical analysis request to OpenAI")
@@ -184,7 +230,7 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=MODAL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in technical analysis."},
                 {"role": "user", "content": prompt}
@@ -192,6 +238,9 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
             temperature=0.7,
             max_tokens=500
         )
+        
+        # Track token usage
+        track_token_usage(response)
         
         # Extract analysis from response
         technical_analysis = response.choices[0].message.content
@@ -244,16 +293,38 @@ def analyze_news_sentiment(ticker, news_data):
         
         openai.api_key = GetOpenaikey()
         
-        # Format news headlines
-        news_headlines = "\n".join([f"- {article['title']}" for article in news_data[:10]])
+        # Format news headlines with summaries when available
+        news_content = []
+        for idx, article in enumerate(news_data[:10]):
+            headline = f"- {article['title']}"
+            if 'summary' in article and article['summary']:
+                summary = article['summary'].strip()
+                if len(summary) > 200:  # Truncate long summaries
+                    summary = summary[:197] + "..."
+                headline += f"\n  Summary: {summary}"
+            elif 'description' in article and article['description']:
+                desc = article['description'].strip()
+                if len(desc) > 200:  # Truncate long descriptions
+                    desc = desc[:197] + "..."
+                headline += f"\n  Description: {desc}"
+                
+            # Add source and date if available
+            if 'source' in article and article['source']:
+                headline += f" (Source: {article['source']})"
+            if 'date' in article and article['date']:
+                headline += f" - {article['date']}"
+                
+            news_content.append(headline)
+            
+        news_headlines = "\n".join(news_content)
         
-        logger.debug(f"News data prepared: {len(news_data)} articles, using top 10 for analysis")
+        logger.debug(f"News data prepared: {len(news_data)} articles, using top 10 for analysis with enhanced context")
         
         # Create prompt for OpenAI
         prompt = f"""
         Analyze the following news articles about {ticker} and determine the overall sentiment and potential impact on the stock price:
         
-        Recent News Headlines:
+        Recent News Headlines and Summaries:
         {news_headlines}
         
         Please provide a detailed analysis of the news sentiment, including:
@@ -261,6 +332,8 @@ def analyze_news_sentiment(ticker, news_data):
         2. Are there any significant events or announcements that could impact the stock price?
         3. What is the potential short-term and long-term impact of these news items?
         4. Are there any emerging trends or themes in the news coverage?
+        5. Rate the reliability and importance of the news sources on a scale of 1-10.
+        6. Indicate if any news contradicts market movement or technical indicators.
         """
         
         logger.debug("Sending news sentiment analysis request to OpenAI")
@@ -268,7 +341,7 @@ def analyze_news_sentiment(ticker, news_data):
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=MODAL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in news sentiment analysis."},
                 {"role": "user", "content": prompt}
@@ -276,6 +349,9 @@ def analyze_news_sentiment(ticker, news_data):
             temperature=0.7,
             max_tokens=500
         )
+        
+        # Track token usage
+        track_token_usage(response)
         
         # Extract analysis from response
         news_analysis = response.choices[0].message.content
@@ -356,7 +432,7 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=MODAL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst providing clear, direct trading recommendations, confident. ALWAYS format price ranges using simple dollar amounts like: $100 - $120. Always include specific numeric price ranges."},
                 {"role": "user", "content": prompt}
@@ -364,6 +440,9 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
             temperature=0.7,
             max_tokens=500
         )
+        
+        # Track token usage
+        track_token_usage(response)
         
         # Extract analysis from response
         analysis_text = response.choices[0].message.content
@@ -575,6 +654,143 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         logger.error(f"Error generating final recommendation for {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error generating final recommendation for {ticker}: {str(e)}")
 
+def analyze_market_correlation(ticker, stock_data, market_index='SPY'):
+    """
+    Analyze how the stock correlates with the broader market.
+    
+    Args:
+        ticker (str): Stock ticker symbol
+        stock_data (pandas.DataFrame): DataFrame containing stock price data
+        market_index (str): Market index to compare with (default: 'SPY')
+        
+    Returns:
+        dict: Dictionary containing correlation analysis results
+    """
+    try:
+        from data_fetcher.stock_data import fetch_stock_data
+        import numpy as np
+        
+        logger.info(f"Starting market correlation analysis for {ticker} vs {market_index}")
+        
+        # Set OpenAI API key
+        openai.api_key = GetOpenaikey()
+        
+        # Try to fetch market index data for the same date range as the stock data
+        start_date = stock_data.index[0]
+        end_date = stock_data.index[-1]
+        
+        try:
+            market_data = fetch_stock_data(market_index, start_date=start_date, end_date=end_date)
+            logger.debug(f"Retrieved {len(market_data)} data points for {market_index}")
+        except Exception as e:
+            logger.warning(f"Error fetching data for {market_index}: {str(e)}. Using default 2-year period.")
+            market_data = fetch_stock_data(market_index)
+        
+        # Align data to ensure matching dates
+        # Convert to returns to make comparison more meaningful
+        stock_returns = stock_data['close'].pct_change().dropna()
+        market_returns = market_data['close'].pct_change().dropna()
+        
+        # Align dates by using only the dates that appear in both datasets
+        common_dates = sorted(set(stock_returns.index).intersection(set(market_returns.index)))
+        
+        if len(common_dates) < 30:
+            logger.warning(f"Not enough common dates ({len(common_dates)}) to calculate correlation. Minimum required: 30")
+            return {
+                'analysis': f"Insufficient data to calculate correlation between {ticker} and {market_index}.",
+                'correlation': 0,
+                'beta': 0,
+                'alpha': 0
+            }
+        
+        aligned_stock = stock_returns.loc[common_dates]
+        aligned_market = market_returns.loc[common_dates]
+        
+        # Calculate correlation, beta, and alpha
+        correlation = np.corrcoef(aligned_stock, aligned_market)[0, 1]
+        
+        # Beta = Covariance(stock, market) / Variance(market)
+        beta = np.cov(aligned_stock, aligned_market)[0, 1] / np.var(aligned_market)
+        
+        # Alpha = Average Stock Return - (Beta * Average Market Return)
+        alpha = aligned_stock.mean() - (beta * aligned_market.mean())
+        
+        logger.debug(f"Calculated correlation: {correlation:.2f}, beta: {beta:.2f}, alpha: {alpha:.4f}")
+        
+        # Calculate performance metrics
+        stock_total_return = ((stock_data['close'].iloc[-1] / stock_data['close'].iloc[0]) - 1) * 100
+        market_total_return = ((market_data['close'].iloc[-1] / market_data['close'].iloc[0]) - 1) * 100
+        
+        stock_volatility = stock_returns.std() * np.sqrt(252) * 100  # Annualized volatility
+        market_volatility = market_returns.std() * np.sqrt(252) * 100  # Annualized volatility
+        
+        # Create prompt for OpenAI
+        prompt = f"""
+        Analyze the correlation between {ticker} and the market index {market_index}:
+        
+        Correlation: {correlation:.2f}
+        Beta: {beta:.2f}
+        Alpha: {alpha:.4f}
+        
+        Performance Comparison:
+        - {ticker} Total Return: {stock_total_return:.2f}%
+        - {market_index} Total Return: {market_total_return:.2f}%
+        - {ticker} Volatility (annualized): {stock_volatility:.2f}%
+        - {market_index} Volatility (annualized): {market_volatility:.2f}%
+        
+        Please provide a detailed analysis of what these metrics mean for {ticker}:
+        1. Interpret the correlation value and what it means for diversification.
+        2. Explain what the beta value indicates about the stock's volatility compared to the market.
+        3. Analyze the alpha and its implications for the stock's performance.
+        4. Based on these metrics, would this stock be suitable for index-tracking, hedging, or diversification?
+        5. How might this stock perform in different market conditions (bull, bear, sideways)?
+        """
+        
+        logger.debug("Sending market correlation analysis request to OpenAI")
+        logger.debug(f"Market correlation analysis prompt summary for {ticker} (prompt too long to log in full)")
+        
+        # Call OpenAI API
+        response = openai.ChatCompletion.create(
+            model=MODAL,
+            messages=[
+                {"role": "system", "content": "You are a professional stock analyst specializing in market correlation and risk analysis."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        # Track token usage
+        track_token_usage(response)
+        
+        # Extract analysis from response
+        correlation_analysis = response.choices[0].message.content
+        logger.debug("Received market correlation analysis from OpenAI")
+        
+        # Log AI response in a formatted way
+        log_ai_response(logger, ticker, "correlation", correlation_analysis)
+        
+        logger.info(f"Completed market correlation analysis for {ticker} vs {market_index}")
+        
+        return {
+            'analysis': correlation_analysis,
+            'correlation': correlation,
+            'beta': beta,
+            'alpha': alpha,
+            'returns': {
+                'stock': stock_total_return,
+                'market': market_total_return
+            },
+            'volatility': {
+                'stock': stock_volatility,
+                'market': market_volatility
+            }
+        }
+    
+    except Exception as e:
+        logger.error(f"Error analyzing market correlation for {ticker}: {str(e)}", exc_info=True)
+        raise Exception(f"Error analyzing market correlation for {ticker}: {str(e)}")
+
 def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, current_price=None):
     """
     Analyze stock data using OpenAI to generate trading recommendations.
@@ -596,7 +812,7 @@ def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, 
         logger.info(f"Starting full stock analysis for {ticker}")
         
         # Step 1: Analyze price data
-        logger.info(f"Step 1/4: Analyzing price data for {ticker}")
+        logger.info(f"Step 1/5: Analyzing price data for {ticker}")
         price_analysis = analyze_price_data(ticker, stock_data)
         
         # Use provided current price if available, otherwise use the one from price_analysis
@@ -609,16 +825,23 @@ def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, 
         logger.debug(f"Using current price for analysis: ${current_price}")
         
         # Step 2: Analyze technical indicators
-        logger.info(f"Step 2/4: Analyzing technical indicators for {ticker}")
+        logger.info(f"Step 2/5: Analyzing technical indicators for {ticker}")
         technical_analysis = analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data)
         
         # Step 3: Analyze news sentiment
-        logger.info(f"Step 3/4: Analyzing news sentiment for {ticker}")
+        logger.info(f"Step 3/5: Analyzing news sentiment for {ticker}")
         news_analysis = analyze_news_sentiment(ticker, news_data)
         
-        # Step 4: Generate final recommendation
-        logger.info(f"Step 4/4: Generating final recommendation for {ticker}")
+        # Step 4: Analyze market correlation
+        logger.info(f"Step 4/5: Analyzing market correlation for {ticker}")
+        correlation_analysis = analyze_market_correlation(ticker, stock_data)
+        
+        # Step 5: Generate final recommendation
+        logger.info(f"Step 5/5: Generating final recommendation for {ticker}")
         final_analysis = generate_final_recommendation(ticker, price_analysis, technical_analysis, news_analysis, current_price)
+        
+        # Add correlation analysis to final analysis
+        final_analysis['correlation_analysis'] = correlation_analysis
         
         # Log final analysis to the dedicated log file
         log_final_analysis(logger, ticker, final_analysis)
