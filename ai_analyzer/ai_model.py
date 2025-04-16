@@ -3,11 +3,27 @@ from utils.config import load_config
 from utils.logging import get_logger, log_ai_response, log_final_analysis
 from ai_analyzer.track_token_usage import track_token_usage, get_token_usage, reset_token_usage
 
-MODAL = "gpt-4o-mini"
-
+# Define the default model
+MODEL = "gpt-4o-mini"
 
 # Get logger for this module
 logger = get_logger('ai_analyzer')
+
+def set_model(model_name):
+    """
+    Set the global model to use for API calls
+    
+    Args:
+        model_name (str): The OpenAI model name to use
+        
+    Returns:
+        str: The previous model name
+    """
+    global MODEL
+    previous = MODEL
+    MODEL = model_name
+    logger.info(f"Changed model from {previous} to {MODEL}")
+    return previous
 
 def analyze_price_data(ticker, stock_data):
     """
@@ -92,7 +108,7 @@ def analyze_price_data(ticker, stock_data):
         
         # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model=MODAL,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in technical price analysis."},
                 {"role": "user", "content": prompt}
@@ -228,9 +244,9 @@ def analyze_technical_indicators(ticker, sma_data, macd_data, rsi_data):
         logger.debug("Sending technical analysis request to OpenAI")
         logger.debug(f"Technical analysis prompt:\n{prompt}")
         
-        # Call OpenAI API
+        # Call OpenAI API with global MODEL
         response = openai.ChatCompletion.create(
-            model=MODAL,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in technical analysis."},
                 {"role": "user", "content": prompt}
@@ -339,9 +355,9 @@ def analyze_news_sentiment(ticker, news_data):
         logger.debug("Sending news sentiment analysis request to OpenAI")
         logger.debug(f"News sentiment analysis prompt:\n{prompt}")
         
-        # Call OpenAI API
+        # Call OpenAI API with global MODEL
         response = openai.ChatCompletion.create(
-            model=MODAL,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in news sentiment analysis."},
                 {"role": "user", "content": prompt}
@@ -430,9 +446,9 @@ def generate_final_recommendation(ticker, price_analysis, technical_analysis, ne
         logger.debug("Sending final recommendation request to OpenAI")
         logger.debug(f"Final recommendation prompt summary for {ticker} (prompt too long to log in full)")
         
-        # Call OpenAI API
+        # Call OpenAI API with global MODEL
         response = openai.ChatCompletion.create(
-            model=MODAL,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst providing clear, direct trading recommendations, confident. ALWAYS format price ranges using simple dollar amounts like: $100 - $120. Always include specific numeric price ranges."},
                 {"role": "user", "content": prompt}
@@ -749,9 +765,9 @@ def analyze_market_correlation(ticker, stock_data, market_index='SPY'):
         logger.debug("Sending market correlation analysis request to OpenAI")
         logger.debug(f"Market correlation analysis prompt summary for {ticker} (prompt too long to log in full)")
         
-        # Call OpenAI API
+        # Call OpenAI API with global MODEL
         response = openai.ChatCompletion.create(
-            model=MODAL,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": "You are a professional stock analyst specializing in market correlation and risk analysis."},
                 {"role": "user", "content": prompt}
@@ -791,7 +807,7 @@ def analyze_market_correlation(ticker, stock_data, market_index='SPY'):
         logger.error(f"Error analyzing market correlation for {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error analyzing market correlation for {ticker}: {str(e)}")
 
-def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, current_price=None):
+def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, current_price=None, model=None):
     """
     Analyze stock data using OpenAI to generate trading recommendations.
     This function orchestrates the multi-step analysis process.
@@ -804,12 +820,22 @@ def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, 
         rsi_data (pandas.DataFrame): DataFrame containing RSI indicators
         news_data (list): List of dictionaries containing news articles
         current_price (float, optional): Current price of the stock. If None, will use price from historical data.
+        model (str, optional): OpenAI model to use. If None, will use the default MODEL.
         
     Returns:
         dict: Dictionary containing analysis results
     """
+    # Set global MODEL temporarily to the specified model for this analysis
+    global MODEL
+    original_model = MODEL
+    
     try:
-        logger.info(f"Starting full stock analysis for {ticker}")
+        # Use specified model or default if none provided
+        if model is not None:
+            logger.info(f"Temporarily setting model to {model} for this analysis")
+            MODEL = model
+            
+        logger.info(f"Starting full stock analysis for {ticker} using model: {MODEL}")
         
         # Step 1: Analyze price data
         logger.info(f"Step 1/5: Analyzing price data for {ticker}")
@@ -854,6 +880,12 @@ def analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, 
     except Exception as e:
         logger.error(f"Error analyzing stock {ticker}: {str(e)}", exc_info=True)
         raise Exception(f"Error analyzing stock {ticker}: {str(e)}")
+    
+    finally:
+        # Restore original MODEL
+        if model is not None:
+            logger.info(f"Restoring model back to {original_model}")
+            MODEL = original_model
 
 def GetOpenaikey():
     config = load_config()

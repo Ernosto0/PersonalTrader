@@ -7,11 +7,11 @@ from data_fetcher.news_data import fetch_news_data
 from indicators.sma import calculate_sma
 from indicators.macd import calculate_macd
 from indicators.rsi import calculate_rsi
-from ai_analyzer.ai_model import analyze_stock
-from ai_analyzer.track_token_usage import get_token_usage, reset_token_usage
+from ai_analyzer.ai_model import analyze_stock, set_model
+from ai_analyzer.track_token_usage import get_token_usage, reset_token_usage, get_current_model
 from utils.config import load_config
 from utils.logging import get_logger
-from ai_analyzer.ai_model import MODAL
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -33,13 +33,16 @@ def parse_arguments():
                         help='Number of historical periods to backtest (default: 5)')
     parser.add_argument('--show-tokens', action='store_true',
                         help='Show token usage and cost information for OpenAI API calls')
+    parser.add_argument('--model', type=str, default='gpt-4o-mini', 
+                        choices=['gpt-3.5-turbo', 'gpt-4o-mini', 'gpt-4', 'gpt-4o'],
+                        help='Specify the OpenAI model to use for analysis (default: gpt-4o-mini)')
     parser.add_argument('--log-level', type=str, default='INFO', 
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                         help='Set the logging level for more or less verbose output')
     
     return parser.parse_args()
 
-def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False):
+def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False, model='gpt-4o-mini'):
     """
     Run backtesting to validate model against historical data
     
@@ -48,6 +51,7 @@ def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False):
         periods (int): Number of historical periods to backtest
         log_level (str): Logging level
         show_tokens (bool): Whether to show token usage information
+        model (str): OpenAI model to use for analysis
     """
     import pandas as pd
     from datetime import datetime, timedelta
@@ -55,10 +59,13 @@ def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False):
     # Reset token usage counter before starting
     reset_token_usage()
     
+    # Set the model
+    set_model(model)
+    
     logger = get_logger('backtest')
     logger.setLevel(getattr(logging, log_level))
     
-    logger.info(f"Starting backtesting for {ticker} with {periods} periods")
+    logger.info(f"Starting backtesting for {ticker} with {periods} periods using model: {model}")
     
     # Fetch complete historical data
     stock_data = fetch_stock_data(ticker, years=3)  # Get 3 years of data for backtesting
@@ -114,7 +121,7 @@ def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False):
         
         # Generate analysis
         try:
-            analysis = analyze_stock(ticker, period_data, sma_data, macd_data, rsi_data, news_data, current_price)
+            analysis = analyze_stock(ticker, period_data, sma_data, macd_data, rsi_data, news_data, current_price, model=model)
             
             # Get future prices for validation (30 and 90 days later)
             future_idx_30d = min(end_idx + 30, len(stock_data) - 1)
@@ -167,13 +174,14 @@ def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False):
         # Print results
         print("\n=== Backtesting Results ===")
         print(f"Ticker: {ticker}")
+        print(f"Model: {model}")
         print(f"Periods: {len(backtest_results)}")
         print(f"Overall Accuracy: {overall_accuracy:.2f}%")
         print("\nDetailed Results:")
         print(backtest_results[['Date', 'Price', 'Decision', 'Result_30d', 'Result_90d', 'Accuracy']].to_string(index=False))
         
         # Save results to CSV
-        results_file = f"backtest_{ticker}_{datetime.now().strftime('%Y%m%d')}.csv"
+        results_file = f"backtest_{ticker}_{model}_{datetime.now().strftime('%Y%m%d')}.csv"
         backtest_results.to_csv(results_file, index=False)
         print(f"\nResults saved to {results_file}")
         
@@ -181,19 +189,19 @@ def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False):
         
         # Display token usage if requested
         if show_tokens:
-            display_token_usage(MODAL)
+            display_token_usage()
     else:
         print("No valid backtesting results generated")
         logger.warning("No valid backtesting results generated")
 
-def display_token_usage(MODAL):
+def display_token_usage():
     """
     Display token usage information
     """
     usage = get_token_usage()
     
     print("\n=== Token Usage Information ===")
-    print(f"Modal: {MODAL}")
+    print(f"Model: {get_current_model()}")
     print(f"Total API Calls: {usage['calls']}")
     print(f"Total Tokens: {usage['total_tokens']:,}")
     print(f"Prompt Tokens: {usage['prompt_tokens']:,}")
@@ -206,9 +214,13 @@ def main():
     ticker = args.ticker.upper()
     show_detailed = args.detailed
     show_tokens = args.show_tokens
+    model = args.model
     
     # Reset token usage counter before starting
     reset_token_usage()
+    
+    # Set the model
+    set_model(model)
     
     # Setup logging
     log_level = getattr(logging, args.log_level)
@@ -217,10 +229,10 @@ def main():
     
     # Check if backtesting is requested
     if args.backtest:
-        run_backtest(ticker, args.periods, args.log_level, show_tokens)
+        run_backtest(ticker, args.periods, args.log_level, show_tokens, model)
         return
     
-    logger.info(f"Starting analysis for ticker: {ticker}")
+    logger.info(f"Starting analysis for ticker: {ticker} using model: {model}")
     start_time = time.time()
     
     try:
@@ -253,12 +265,13 @@ def main():
         
         # Generate AI analysis
         logger.info(f"Generating AI analysis for {ticker}...")
-        analysis = analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, current_price)
+        analysis = analyze_stock(ticker, stock_data, sma_data, macd_data, rsi_data, news_data, current_price, model=model)
         logger.debug("AI analysis completed")
         
         # Print results in a friendly format
         print("\n=== Stock Analysis Report ===")
         print(f"Ticker: {ticker}")
+        print(f"Model: {model}")
         print(f"Current Price: ${current_price}")
         print(f"Previous Close: ${current_data['previous_close']}")
         print(f"Day Range: ${current_data['day_low']} - ${current_data['day_high']}")
@@ -334,7 +347,7 @@ def main():
         
         # Display token usage if requested
         if show_tokens:
-            display_token_usage(MODAL)
+            display_token_usage()
         
         # Log completion time
         elapsed_time = time.time() - start_time

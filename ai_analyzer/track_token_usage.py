@@ -28,8 +28,8 @@ def get_current_model():
         str: Current model name
     """
     # Import here to avoid circular imports
-    from ai_analyzer.ai_model import MODAL
-    return MODAL
+    from ai_analyzer.ai_model import MODEL
+    return MODEL
 
 def track_token_usage(response):
     """
