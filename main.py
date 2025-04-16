@@ -20,9 +20,14 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    # Required arguments
-    parser.add_argument('--ticker', type=str, required=True, 
+    # Required arguments group (make ticker optional when setting API key)
+    required_group = parser.add_argument_group('required arguments')
+    required_group.add_argument('--ticker', type=str, 
                         help='Stock ticker symbol (e.g., AAPL, MSFT, GOOG)')
+    
+    # OpenAI API Key argument
+    parser.add_argument('--addopenaikey', type=str, metavar='KEY',
+                        help='Add your OpenAI API key to the .env file')
     
     # Optional arguments
     parser.add_argument('--detailed', action='store_true', 
@@ -40,7 +45,13 @@ def parse_arguments():
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                         help='Set the logging level for more or less verbose output')
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Check that ticker is provided when not setting API key
+    if not args.addopenaikey and not args.ticker:
+        parser.error('the --ticker argument is required unless --addopenaikey is used')
+        
+    return args
 
 def run_backtest(ticker, periods=5, log_level='INFO', show_tokens=False, model='gpt-4o-mini'):
     """
@@ -208,9 +219,59 @@ def display_token_usage():
     print(f"Completion Tokens: {usage['completion_tokens']:,}")
     print(f"Estimated Cost: ${usage['cost']:.4f}")
 
+def add_openai_key_to_env(api_key):
+    """
+    Add the OpenAI API key to the .env file
+    
+    Args:
+        api_key (str): The OpenAI API key to add
+    """
+    import os
+    from pathlib import Path
+    
+    logger = get_logger('config')
+    
+    # Check if .env file exists
+    env_file = Path('.env')
+    
+    if env_file.exists():
+        # Read existing content
+        with open(env_file, 'r') as f:
+            lines = f.readlines()
+        
+        # Look for existing OPENAI_API_KEY line
+        key_found = False
+        for i, line in enumerate(lines):
+            if line.startswith('OPENAI_API_KEY='):
+                lines[i] = f'OPENAI_API_KEY={api_key}\n'
+                key_found = True
+                break
+        
+        # Add key if not found
+        if not key_found:
+            lines.append(f'\nOPENAI_API_KEY={api_key}\n')
+        
+        # Write back to file
+        with open(env_file, 'w') as f:
+            f.writelines(lines)
+    else:
+        # Create new .env file
+        with open(env_file, 'w') as f:
+            f.write(f'OPENAI_API_KEY={api_key}\n')
+    
+    logger.info(f"OpenAI API key successfully added to .env file")
+    print(f"OpenAI API key successfully added to .env file")
+    print("You can now use the application with OpenAI API integration")
+
 def main():
     # Parse command line arguments
     args = parse_arguments()
+    
+    # Handle adding OpenAI API key to .env
+    if args.addopenaikey:
+        add_openai_key_to_env(args.addopenaikey)
+        return
+    
     ticker = args.ticker.upper()
     show_detailed = args.detailed
     show_tokens = args.show_tokens
