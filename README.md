@@ -8,14 +8,19 @@ A command-line AI stock trading assistant that provides clear, direct trading su
 - Calculates technical indicators:
   - Simple Moving Average (SMA)
   - Moving Average Convergence Divergence (MACD)
+  - Relative Strength Index (RSI)
 - Pulls latest news headlines about the stock
 - Uses OpenAI to generate trading recommendations through a multi-step analysis process:
   1. Analyzes historical price data for patterns and trends
   2. Evaluates technical indicators for trading signals
   3. Assesses news sentiment and potential impact
-  4. Combines all analyses for a comprehensive final recommendation
+  4. Analyzes market correlation with indices
+  5. Combines all analyses for a comprehensive final recommendation
 - Provides clear Buy/Sell/Hold decisions with price ranges
 - Includes risk level assessment and confidence score
+- Supports multiple OpenAI models for analysis
+- Includes backtesting functionality to evaluate recommendation accuracy
+- Tracks token usage and cost information
 
 ## Installation
 
@@ -30,7 +35,14 @@ cd ai-stock-assistant
 pip install -r requirements.txt
 ```
 
-3. Set up your API keys:
+3. Set up your OpenAI API key (two options):
+   
+   **Option 1**: Using command line:
+   ```
+   python main.py --addopenaikey "your_openai_api_key_here"
+   ```
+   
+   **Option 2**: Manually create a .env file:
    - Copy the `.env.example` file to `.env`:
    ```
    cp .env.example .env
@@ -43,11 +55,15 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Basic Analysis
+
 Run the assistant with a stock ticker symbol:
 
 ```
 python main.py --ticker AMZN
 ```
+
+### Detailed Analysis
 
 To see detailed analysis from each step of the process:
 
@@ -55,46 +71,74 @@ To see detailed analysis from each step of the process:
 python main.py --ticker AMZN --detailed
 ```
 
-The assistant will:
-1. Fetch historical stock data
-2. Calculate technical indicators
-3. Gather recent news
-4. Perform a multi-step AI analysis:
-   - Analyze price data for patterns and trends
-   - Evaluate technical indicators for trading signals
-   - Assess news sentiment and potential impact
-   - Generate a comprehensive final recommendation
+### Select OpenAI Model
+
+Choose from various OpenAI models for your analysis:
+
+```
+python main.py --ticker AMZN --model gpt-4o
+```
+
+Available models:
+- gpt-3.5-turbo (fastest, lowest cost)
+- gpt-4o-mini (default, balanced performance/cost)
+- gpt-4o (improved reasoning)
+- gpt-4 (most comprehensive analysis)
+
+### Track Token Usage
+
+View token usage and estimated cost of the analysis:
+
+```
+python main.py --ticker AMZN --show-tokens
+```
+
+### Backtesting
+
+Validate the model against historical data:
+
+```
+python main.py --ticker AMZN --backtest --periods 5
+```
+
+You can also combine options:
+
+```
+python main.py --ticker AMZN --backtest --periods 3 --model gpt-4o-mini --show-tokens
+```
 
 ## Example Output
 
 ```
 === Stock Analysis Report ===
 Ticker: AMZN
-Summary: Amazon shows strong growth potential with positive technical indicators and favorable news.
+Current Price: $178.75
+Previous Close: $177.23
+Day Range: $176.50 - $179.88
+52 Week Range: $118.35 - $180.25
+Volume: 32,459,820
+
+Strategy: Amazon shows strong growth potential with positive technical indicators and favorable news.
 Decision: Buy
-Buy Range: $145.00 - $150.00
-Sell Range: $165.00 - $170.00
+Buy Range: $175.00 - $180.00
+Sell Range: $195.00 - $205.00
 Risk Level: Medium
 Reason: Strong technical indicators and positive news sentiment indicate upward momentum.
-Confidence: 75%
+Confidence: 80%
 
-=== Detailed Analysis ===
-
---- Price Analysis ---
-[Detailed price analysis text]
-
---- Technical Indicator Analysis ---
-[Detailed technical analysis text]
-
---- News Sentiment Analysis ---
-[Detailed news sentiment analysis text]
+=== Market Correlation ===
+Correlation with S&P 500: 0.73
+Beta: 1.25
+Alpha: 0.0012
+Moderate positive correlation with the market
+More volatile than the market
 ```
 
 ## Requirements
 
 - Python 3.8+
 - OpenAI API key
-- News API key
+- News API key (optional for enhanced news fetching)
 
 ## License
 
